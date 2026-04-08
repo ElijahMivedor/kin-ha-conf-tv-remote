@@ -1,21 +1,13 @@
-"""Switch platform for TV Remote — publishes ON/OFF over MQTT."""
+"""Switch platform for TV Remote — calls Node.js HTTP server directly."""
 import logging
 
-from homeassistant.components import mqtt
+import aiohttp
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import (
-    CONF_COMMAND_TOPIC,
-    CONF_NAME,
-    CONF_STATE_TOPIC,
-    DEFAULT_NAME,
-    DOMAIN,
-    PAYLOAD_OFF,
-    PAYLOAD_ON,
-)
+from .const import CONF_HOST, CONF_NAME, CONF_PORT, DEFAULT_NAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,21 +17,19 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    async_add_entities([TvRemoteSwitch(entry)])
+    async_add_entities([TvRemoteSwitch(entry)], update_before_add=True)
 
 
 class TvRemoteSwitch(SwitchEntity):
     """Represents the TV power switch in Home Assistant."""
 
-    _attr_has_entity_name = True
     _attr_icon = "mdi:television"
 
     def __init__(self, entry: ConfigEntry) -> None:
-        self._entry          = entry
-        self._command_topic  = entry.data[CONF_COMMAND_TOPIC]
-        self._state_topic    = entry.data[CONF_STATE_TOPIC]
+        self._host           = entry.data[CONF_HOST]
+        self._port           = entry.data[CONF_PORT]
         self._attr_name      = entry.data.get(CONF_NAME, DEFAULT_NAME)
-        self._attr_unique_id = f"{DOMAIN}_{self._command_topic}"
+        self._attr_unique_id = f"{DOMAIN}_{self._host}_{self._port}"
         self._is_on          = False
         self._available      = False
 
@@ -51,52 +41,44 @@ class TvRemoteSwitch(SwitchEntity):
     def available(self) -> bool:
         return self._available
 
-    async def async_added_to_hass(self) -> None:
-        """Subscribe to the state topic when added to HA."""
+    def _base_url(self) -> str:
+        return f"http://{self._host}:{self._port}"
 
-        @callback
-        def state_received(msg):
-            payload = msg.payload.strip().upper()
-            _LOGGER.debug("State message received: %s", payload)
-
-            if payload == "OFFLINE":
-                self._available = False
-            elif payload == "TRANSITIONING":
-                # Keep current is_on; mark as unavailable briefly so UI shows spinner
-                self._available = True
-            elif payload == PAYLOAD_ON:
-                self._is_on     = True
-                self._available = True
-            elif payload == PAYLOAD_OFF:
-                self._is_on     = False
-                self._available = True
-            else:
-                _LOGGER.warning("Unexpected state payload: %s", payload)
-                return
-
-            self.async_write_ha_state()
-
-        await mqtt.async_subscribe(
-            self.hass,
-            self._state_topic,
-            state_received,
-            qos=1,
-        )
+    async def async_update(self) -> None:
+        """Poll /status to sync state."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{self._base_url()}/status", timeout=aiohttp.ClientTimeout(total=5)
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        self._is_on     = data.get("state", "OFF").upper() == "ON"
+                        self._available = True
+                    else:
+                        self._available = False
+        except Exception as err:
+            _LOGGER.warning("TV Remote unreachable: %s", err)
+            self._available = False
 
     async def async_turn_on(self, **kwargs) -> None:
-        await mqtt.async_publish(
-            self.hass,
-            self._command_topic,
-            PAYLOAD_ON,
-            qos=1,
-            retain=False,
-        )
+        await self._post("/on")
 
     async def async_turn_off(self, **kwargs) -> None:
-        await mqtt.async_publish(
-            self.hass,
-            self._command_topic,
-            PAYLOAD_OFF,
-            qos=1,
-            retain=False,
-        )
+        await self._post("/off")
+
+    async def _post(self, endpoint: str) -> None:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self._base_url()}{endpoint}",
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    if resp.status in (200, 202):
+                        self._available = True
+                    else:
+                        _LOGGER.error("TV Remote returned %s for %s", resp.status, endpoint)
+        except Exception as err:
+            _LOGGER.error("TV Remote request failed: %s", err)
+            self._available = False
+        self.async_write_ha_state()

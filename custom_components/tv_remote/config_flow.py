@@ -3,21 +3,13 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 
-from .const import (
-    CONF_COMMAND_TOPIC,
-    CONF_NAME,
-    CONF_STATE_TOPIC,
-    DEFAULT_COMMAND_TOPIC,
-    DEFAULT_NAME,
-    DEFAULT_STATE_TOPIC,
-    DOMAIN,
-)
+from .const import CONF_HOST, CONF_NAME, CONF_PORT, DEFAULT_NAME, DEFAULT_PORT, DOMAIN
 
 STEP_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
-        vol.Required(CONF_COMMAND_TOPIC, default=DEFAULT_COMMAND_TOPIC): str,
-        vol.Required(CONF_STATE_TOPIC,   default=DEFAULT_STATE_TOPIC):   str,
+        vol.Required(CONF_HOST): str,
+        vol.Required(CONF_PORT, default=DEFAULT_PORT): int,
     }
 )
 
@@ -25,25 +17,15 @@ STEP_SCHEMA = vol.Schema(
 class TvRemoteConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle the initial setup UI in Home Assistant."""
 
-    VERSION = 1
+    VERSION = 2
 
     async def async_step_user(self, user_input=None):
-        errors = {}
-
         if user_input is not None:
-            # Prevent duplicate entries with the same topics
-            await self.async_set_unique_id(user_input[CONF_COMMAND_TOPIC])
+            await self.async_set_unique_id(f"{user_input[CONF_HOST]}:{user_input[CONF_PORT]}")
             self._abort_if_unique_id_configured()
-            return self.async_create_entry(
-                title=user_input[CONF_NAME],
-                data=user_input,
-            )
+            return self.async_create_entry(title=user_input[CONF_NAME], data=user_input)
 
-        return self.async_show_form(
-            step_id="user",
-            data_schema=STEP_SCHEMA,
-            errors=errors,
-        )
+        return self.async_show_form(step_id="user", data_schema=STEP_SCHEMA)
 
     @staticmethod
     @callback
@@ -52,8 +34,6 @@ class TvRemoteConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class TvRemoteOptionsFlow(config_entries.OptionsFlow):
-    """Allow editing topics after initial setup."""
-
     def __init__(self, config_entry):
         self._entry = config_entry
 
@@ -63,14 +43,8 @@ class TvRemoteOptionsFlow(config_entries.OptionsFlow):
 
         schema = vol.Schema(
             {
-                vol.Required(
-                    CONF_COMMAND_TOPIC,
-                    default=self._entry.data.get(CONF_COMMAND_TOPIC, DEFAULT_COMMAND_TOPIC),
-                ): str,
-                vol.Required(
-                    CONF_STATE_TOPIC,
-                    default=self._entry.data.get(CONF_STATE_TOPIC, DEFAULT_STATE_TOPIC),
-                ): str,
+                vol.Required(CONF_HOST, default=self._entry.data.get(CONF_HOST, "")): str,
+                vol.Required(CONF_PORT, default=self._entry.data.get(CONF_PORT, DEFAULT_PORT)): int,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)

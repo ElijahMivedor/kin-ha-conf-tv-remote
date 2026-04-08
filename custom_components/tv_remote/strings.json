@@ -3,16 +3,16 @@
     "step": {
       "user": {
         "title": "TV Remote Setup",
-        "description": "Configure the MQTT topics that the Node.js server is using.",
+        "description": "Enter the IP and port of the Node.js server running on your Windows PC.",
         "data": {
           "name": "Device name",
-          "command_topic": "Command topic (e.g. tv_remote/set)",
-          "state_topic": "State topic (e.g. tv_remote/state)"
+          "host": "Windows PC IP address",
+          "port": "Port (default 2025)"
         }
       }
     },
     "abort": {
-      "already_configured": "This command topic is already configured."
+      "already_configured": "This host/port is already configured."
     }
   },
   "options": {
@@ -20,8 +20,8 @@
       "init": {
         "title": "TV Remote Options",
         "data": {
-          "command_topic": "Command topic",
-          "state_topic": "State topic"
+          "host": "Windows PC IP address",
+          "port": "Port"
         }
       }
     }
