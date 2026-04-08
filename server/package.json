@@ -1,0 +1,13 @@
+{
+  "name": "tv-remote-server",
+  "version": "1.0.0",
+  "description": "MQTT bridge for TV RS232 control via PowerShell",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "mqtt": "^5.10.1"
+  }
+}
